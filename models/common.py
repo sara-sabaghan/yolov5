@@ -1121,3 +1121,31 @@ class Classify(nn.Module):
         if isinstance(x, list):
             x = torch.cat(x, 1)
         return self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
+
+class Res2Block(nn.Module):
+    def __init__(self, in_channels, out_channels, scale=4):
+        super(Res2Block, self).__init__()
+        assert out_channels % scale == 0
+        self.scale = scale
+        self.width = out_channels // scale
+
+        self.convs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(self.width, self.width, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(self.width),
+                nn.ReLU(inplace=True)
+            )
+            for _ in range(scale - 1)
+        ])
+
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.conv1(x)))
+        xs = torch.chunk(x, self.scale, dim=1)
+        out = [xs[0]]
+        for s in range(1, self.scale):
+            out.append(self.convs[s - 1](xs[s] + out[-1]))
+        return torch.cat(out, dim=1)
